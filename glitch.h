@@ -69,12 +69,12 @@ void glitch_set_holdoff(uint32_t delay);
  * Each bit is equivalent to a pulse width of 1/F_CPU/2.
  *
  * In duration mode glitch output will be set for the number of cycles specified by pattern parameter.
- * One cycle corresponds to a pulse width of 1/F_CPU/4.
+ * One cycle corresponds to a pulse width of 1/F_CPU/2.
  *
  * Example:
  *  F_CPU = 250MHz
  *  in pattern mode 0b111 will produce a 3 * 1/250MHz/2 = 6ns glitch
- *  in duration mode 0b111 will produce a 7 * 1/250MHz/4 = 12ns glitch
+ *  in duration mode 0b111 will produce a 7 * 1/250MHz/2 = 14ns glitch
  *
  * @param pattern - glitch pattern or pulse duration
  */

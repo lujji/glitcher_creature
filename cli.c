@@ -135,7 +135,7 @@ static void status_handler(EmbeddedCli *cli, char *args, void *context) {
         cli_printf("  - pattern: %.32b (bit = %.1f ns)", cfg.pattern, ns * 2.0f);
         draw_square_wave(cfg.pattern);
     } else {
-        cli_printf("  - duration: %d (%.1f ns)", cfg.pattern, cfg.pattern * ns * 4.0f);
+        cli_printf("  - duration: %d (%.1f ns)", cfg.pattern, cfg.pattern * ns * 2.0f);
     }
 }
 

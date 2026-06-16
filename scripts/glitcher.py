@@ -78,7 +78,7 @@ class Glitcher:
 
     def set_duration(self, duration: int):
         '''
-        Set the duration of the glitch in 1/f_cpu/4 units
+        Set the duration of the glitch in 1/f_cpu/2 units
         '''
         self.ser.write(struct.pack("<BI", self.CMD.SET_DURATION.value[0], duration))
         return self._get_ack()

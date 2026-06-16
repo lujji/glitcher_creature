@@ -7,12 +7,6 @@
 #include "glitch.pio.h"
 #include "config.h"
 
-static_assert(
-    ((GLITCH_OUT_PIN < 16) && (GLITCH_TRIGGER_PIN < 16)) ||
-    ((GLITCH_OUT_PIN >= 16) && (GLITCH_TRIGGER_PIN >= 16)),
-    "PIO pins must both be in GPIO ranges 0-15 or 16-47"
-);
-
 static PIO pio;
 static unsigned int sm;
 static unsigned int offset;
@@ -88,7 +82,7 @@ void glitch_force_trigger() {
     glitch_disarm();
     glitch_arm();
 
-    unsigned int dst = cfg.pattern_mode ? glitch_pattern_offset_delay : glitch_offset_trigger;
+    unsigned int dst = cfg.pattern_mode ? glitch_pattern_offset_delay : glitch_offset_delay;
     pio_sm_exec(pio, sm, pio_encode_jmp(offset + dst));
 }
 

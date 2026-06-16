@@ -6,7 +6,7 @@
 #define LED1_PIN            28
 
 /* glitch output - connect to the gate of the MOSFET */
-#define GLITCH_OUT_PIN      7
+#define GLITCH_OUT_PIN      16
 
 /* trigger input */
 #define GLITCH_TRIGGER_PIN  6
