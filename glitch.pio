@@ -58,6 +58,7 @@ loop:
 % c-sdk {
 static inline void glitch_program_init(PIO pio, uint sm, uint offset, uint glitch_out, uint trigger_in, bool pattern, bool rising_edge) {
     pio_gpio_init(pio, glitch_out);
+    pio_gpio_init(pio, trigger_in);
     pio_sm_set_consecutive_pindirs(pio, sm, glitch_out, 1, true);
     pio_sm_set_consecutive_pindirs(pio, sm, trigger_in, 1, false);
     gpio_set_pulls(trigger_in, 0, 0);
