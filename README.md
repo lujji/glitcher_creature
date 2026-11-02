@@ -1,5 +1,5 @@
 # glitcher_creature
-Glitcher firmware developed for HaD Lecco 2026
+rp2350 glitcher
 
 ## dependencies
 Install [pico-sdk](https://github.com/raspberrypi/pico-sdk). Add it to your PATH or pass using `-DPICO_SDK_PATH=` during build.

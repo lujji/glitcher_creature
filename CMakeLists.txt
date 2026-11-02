@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.13)
 
-set(PICO_PLATFORM rp2040)
+set(PICO_PLATFORM rp2350)
 
 include(pico_sdk_import.cmake)
 
@@ -27,8 +27,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 target_link_libraries(${PROJECT_NAME}
     pico_stdlib
+    pico_sync
+    pico_multicore
     hardware_pio
     hardware_adc
+    hardware_dma
     hardware_pwm
     tinyusb_device
     tinyusb_board
@@ -36,6 +39,10 @@ target_link_libraries(${PROJECT_NAME}
     pico_bootrom
 )
 target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wno-main)
+
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
 
 pico_enable_stdio_usb(${PROJECT_NAME} 1)
 pico_enable_stdio_uart(${PROJECT_NAME} 0)
@@ -51,11 +58,15 @@ add_custom_target(reboot
     COMMAND picotool reboot -f
 )
 
+# find ttyACM device by VID:PID
+set(BOOTSEL [=[p=$(for t in /sys/class/tty/ttyACM*; do d=$(readlink -f $t/device); [ "$(cat $d/../idVendor $d/../idProduct $d/interface 2>/dev/null | paste -sd:)" = 16c0:05e1:cli ] && echo /dev/${t##*/} && break; done); if [ -n "$p" ]; then printf '`' > $p; else echo "glitcher cli port not found, skipping BOOTSEL"; fi]=])
+
 add_custom_target(reflash
-    COMMAND echo '`' > /dev/ttyACM0 || true
+    COMMAND sh -c "${BOOTSEL}"
     COMMAND sleep 0.55
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --parallel
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target program
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target reboot
     USES_TERMINAL
+    VERBATIM
 )

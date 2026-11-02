@@ -4,12 +4,16 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+enum GLITCH_STATE {
+    GLITCH_IDLE,
+    GLITCH_ARMED,
+    GLITCH_TRIGGERED,
+};
+
 struct glitch_config {
-    bool pattern_mode;      // binary pattern or simple pulse
-    bool rising_edge;       // trigger on rising or falling edge
     uint32_t trigger_edges; // Nth edge trigger, 0 = first edge
-    uint32_t holdoff;       // delay from trigger to glitch
-    uint32_t pattern;       // pattern or duration depending on mode
+    bool rising_edge;       // trigger on rising or falling edge
+    bool zeros_first;       // start sequence with zeros or pattern
 };
 
 /**
@@ -35,13 +39,7 @@ void glitch_disarm();
 /**
  * Check if glitch module has been triggered
  */
-bool glitch_get_trigger_state();
-
-/**
- * Set glitch pattern mode.
- * A binary pattern will be shifted out on the glitch output pin instead of a simple pulse
- */
-void glitch_set_pattern_mode(bool enabled);
+enum GLITCH_STATE glitch_get_trigger_state();
 
 /**
  * Set trigger polarity (rising or falling edge)
@@ -56,38 +54,34 @@ void glitch_set_trigger_polarity(bool rising_edge);
 void glitch_set_trigger_nth_edge(uint32_t edges);
 
 /**
- * Set glitch delay (holdoff time between trigger and glitch)
+ * Sequence generator API
  *
- * @param delay - holdoff time in cycles
+ * - pattern/duration: resolution = 1/f/2
+ * - switcher: resolution = 1/f + 2 cycles
  */
-void glitch_set_holdoff(uint32_t delay);
+void glitch_init_sequence(bool zeros_first);
+bool glitch_push_pattern(uint32_t pattern);
+bool glitch_push_duration(uint32_t duration);
+bool glitch_push_switcher(uint32_t mask, uint32_t duration);
 
 /**
- * Set glitch pattern or duration based on mode.
- *
- * In pattern mode the binary pattern will be shifted out on the glitch output pin, LSB first.
- * Each bit is equivalent to a pulse width of 1/F_CPU/2.
- *
- * In duration mode glitch output will be set for the number of cycles specified by pattern parameter.
- * One cycle corresponds to a pulse width of 1/F_CPU/4.
- *
- * Example:
- *  F_CPU = 250MHz
- *  in pattern mode 0b111 will produce a 3 * 1/250MHz/2 = 6ns glitch
- *  in duration mode 0b111 will produce a 7 * 1/250MHz/4 = 12ns glitch
- *
- * @param pattern - glitch pattern or pulse duration
+ * Generate DMA stream for single-shot glitch (cli only)
  */
-void glitch_set_pattern(uint32_t pattern);
+bool glitch_set_pulse(uint32_t holdoff, uint32_t width, uint32_t pattern);
 
 /**
  * Force trigger (can be used for quick testing)
  */
-void glitch_force_trigger();
+bool glitch_force_trigger();
 
 /**
  * Get current glitch module settings
  */
 void glitch_get_settings(struct glitch_config *config);
+
+/**
+ * Print bitstream sequence (debug)
+ */
+void glitch_print_sequence();
 
 #endif // GLITCH_H

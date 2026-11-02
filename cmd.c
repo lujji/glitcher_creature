@@ -19,23 +19,26 @@ enum CMD {
     CMD_ARM = 0x80,
     CMD_DISARM,
     CMD_FORCE_TRIGGER,
-    CMD_SET_HOLDOFF,
-    CMD_SET_DURATION,
-    CMD_SET_PATTERN,
     CMD_SET_TRIGGER_EDGE,
     CMD_SET_TRIGGER_POLARITY,
+    CMD_SEQ_INIT,
+    CMD_SEQ_PUSH_DURATION,
+    CMD_SEQ_PUSH_PATTERN,
+    CMD_SEQ_PUSH_SWITCHER,
     CMD_SET_FREQ,
     CMD_GET_STATUS,
     CMD_GET_SETTINGS,
     CMD_GPIO_WRITE,
     CMD_GPIO_READ,
     CMD_GPIO_SET_PULL,
-    CMD_REBOOT,
+    CMD_REBOOT
 };
 
-enum {
+enum STATUS {
     ACK = 0xAA,
     NACK = 0x55,
+    INVALID_CMD = 0x66,
+    INVALID_LEN = 0x77
 };
 
 static bool check_cmd_len(enum CMD cmd, int len) {
@@ -45,19 +48,31 @@ static bool check_cmd_len(enum CMD cmd, int len) {
         case CMD_FORCE_TRIGGER:
         case CMD_GET_STATUS:
         case CMD_GET_SETTINGS:
-        case CMD_GPIO_READ:
             return len >= 1;
-        case CMD_SET_HOLDOFF:
-        case CMD_SET_DURATION:
-        case CMD_SET_PATTERN:
+
+        case CMD_SET_TRIGGER_POLARITY:
+        case CMD_SEQ_INIT:
+        case CMD_GPIO_READ:
+        case CMD_REBOOT:
+            return len >= 2; // u8
+
+        case CMD_GPIO_WRITE:
+        case CMD_GPIO_SET_PULL:
+            return len >= 3; // u8, u8
+
         case CMD_SET_TRIGGER_EDGE:
         case CMD_SET_FREQ:
-            return len >= 5;
-        case CMD_GPIO_WRITE:
-        case CMD_REBOOT:
-            return len >= 2;
+            return len >= 5; // u32
+
+        case CMD_SEQ_PUSH_DURATION:
+        case CMD_SEQ_PUSH_PATTERN:
+            return (len >= 5) && ((len - 1) % 4 == 0); // u32[]
+
+        case CMD_SEQ_PUSH_SWITCHER:
+            return len >= 9; // u32, u32
+
         default:
-            return false;
+            return true; // INVALID_CMD
     }
 }
 
@@ -65,32 +80,18 @@ int cmd_process(uint8_t *buf, int len, int buf_size) {
     if (buf == NULL || buf_size < 20 || len < 1)
         return 0;
 
-    bool ok = true;
+    enum STATUS ok = ACK;
     int idx = 0;
     const enum CMD cmd = buf[idx++];
 
     if (!check_cmd_len(cmd, len)) {
-        ok = false;
+        ok = INVALID_LEN;
     } else if (cmd == CMD_ARM) {
-        ok = glitch_arm();
+        ok = glitch_arm() ? ACK : NACK;
     } else if (cmd == CMD_DISARM) {
         glitch_disarm();
     } else if (cmd == CMD_FORCE_TRIGGER) {
-        glitch_force_trigger();
-    } else if (cmd == CMD_SET_HOLDOFF) {
-        uint32_t holdoff;
-        memcpy(&holdoff, &buf[idx], sizeof(holdoff));
-        glitch_set_holdoff(holdoff);
-    } else if (cmd == CMD_SET_DURATION) {
-        uint32_t duration;
-        memcpy(&duration, &buf[idx], sizeof(duration));
-        glitch_set_pattern_mode(false);
-        glitch_set_pattern(duration);
-    } else if (cmd == CMD_SET_PATTERN) {
-        uint32_t pattern;
-        memcpy(&pattern, &buf[idx], sizeof(pattern));
-        glitch_set_pattern_mode(true);
-        glitch_set_pattern(pattern);
+        ok = glitch_force_trigger() ? ACK : NACK;
     } else if (cmd == CMD_SET_TRIGGER_EDGE) {
         uint32_t edges;
         memcpy(&edges, &buf[idx], sizeof(edges));
@@ -98,13 +99,39 @@ int cmd_process(uint8_t *buf, int len, int buf_size) {
     } else if (cmd == CMD_SET_TRIGGER_POLARITY) {
         bool rising_edge = buf[idx];
         glitch_set_trigger_polarity(rising_edge);
+    } else if (cmd == CMD_SEQ_INIT) {
+        bool zeros_first = buf[idx];
+        glitch_init_sequence(zeros_first);
+    } else if (cmd == CMD_SEQ_PUSH_DURATION || cmd == CMD_SEQ_PUSH_PATTERN) {
+        for (; idx < len; idx += sizeof(uint32_t)) {
+            uint32_t v;
+            memcpy(&v, &buf[idx], sizeof(v));
+
+            bool success;
+            if (cmd == CMD_SEQ_PUSH_DURATION) {
+                success = glitch_push_duration(v);
+            } else {
+                success = glitch_push_pattern(v);
+            }
+
+            if (!success) {
+                ok = NACK;
+                break;
+            }
+        }
+    } else if (cmd == CMD_SEQ_PUSH_SWITCHER) {
+        uint32_t mask, duration;
+        memcpy(&mask, &buf[idx], sizeof(mask));
+        idx += sizeof(mask);
+        memcpy(&duration, &buf[idx], sizeof(duration));
+        ok = glitch_push_switcher(mask, duration) ? ACK : NACK;
     } else if (cmd == CMD_SET_FREQ) {
         uint32_t freq;
         memcpy(&freq, &buf[idx], sizeof(freq));
-        ok = cmd_set_freq(freq);
+        ok = cmd_set_freq(freq) ? ACK : NACK;
     } else if (cmd == CMD_GET_STATUS) {
         buf[idx++] = ACK;
-        buf[idx++] = glitch_get_trigger_state() ? 1 : 0;
+        buf[idx++] = glitch_get_trigger_state();
         return idx;
     } else if (cmd == CMD_GET_SETTINGS) {
         const uint32_t freq = clock_get_hz(clk_sys);
@@ -112,15 +139,9 @@ int cmd_process(uint8_t *buf, int len, int buf_size) {
         glitch_get_settings(&config);
 
         buf[idx++] = ACK;
-        buf[idx++] = glitch_get_trigger_state() ? 1 : 0;
-        memcpy(buf + idx, &config.pattern_mode, sizeof(config.pattern_mode));
-        idx += sizeof(config.pattern_mode);
+        buf[idx++] = glitch_get_trigger_state();
         memcpy(buf + idx, &config.rising_edge, sizeof(config.rising_edge));
         idx += sizeof(config.rising_edge);
-        memcpy(buf + idx, &config.holdoff, sizeof(config.holdoff));
-        idx += sizeof(config.holdoff);
-        memcpy(buf + idx, &config.pattern, sizeof(config.pattern));
-        idx += sizeof(config.pattern);
         memcpy(buf + idx, &config.trigger_edges, sizeof(config.trigger_edges));
         idx += sizeof(config.trigger_edges);
         memcpy(buf + idx, &freq, sizeof(freq));
@@ -145,10 +166,10 @@ int cmd_process(uint8_t *buf, int len, int buf_size) {
         cmd_reboot(bootloader);
     } else {
         /* unknown command */
-        ok = false;
+        ok = INVALID_CMD;
     }
 
-    buf[1] = ok ? ACK : NACK;
+    buf[1] = ok;
     return 2;
 }
 

@@ -19,8 +19,7 @@ void main() {
     cli_init();
     led_init();
 
-    cmd_set_freq(250000000);
-    glitch_set_pattern(0b11);
+    // cmd_set_freq(250000000);
 
     while (1) {
         /* usb task */

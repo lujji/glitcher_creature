@@ -1,89 +1,98 @@
 .pio_version 0
 
+.program switcher
+read_edges:
+    set     pins, 0
+    out     x, 32
+
+read_initial_state:
+    out     pins, 32
+
+public trigger:
+    wait    0 pin 0         // trigger on rising edge
+    wait    1 pin 0
+    jmp     x--, trigger
+
+public loop:
+.wrap_target
+    out     x, 32
+
+delay:
+    jmp     x--, delay
+
+    out     pins, 32
+.wrap
+
+
 .program glitch
 read_edges:
     set     pins, 0
-    pull    block
-    mov     y, osr
-
-read_delay:
-    pull    block
-    mov     x, osr
-
-read_pattern:
-    pull    block
+    out     x, 32           // autopull
 
 public trigger:
     wait    0 pin 0         // trigger on rising edge
     wait    1 pin 0
-    jmp     y--, trigger
+    jmp     x--, trigger
 
-public delay:
-    jmp     x--, delay
-
-    mov     x, osr
-loop:
-    set     pins, 1
-    jmp     x--, loop
-    set     pins, 0
-    jmp     read_edges
-
-
-.program glitch_pattern
-read_edges:
-    set     pins, 0
-    pull    block
-    mov     y, osr
-
-read_delay:
-    pull    block
-    mov     x, osr
-
-read_pattern:
-    pull    block
-
-public trigger:
-    wait    0 pin 0         // trigger on rising edge
-    wait    1 pin 0
-    jmp     y--, trigger
-
-public delay:
-    jmp     x--, delay
-
-loop:
-    out     pins, 1
-    jmp     !osre, loop
-    jmp     read_edges
+public loop:
+.wrap_target
+    out     pins, 2
+.wrap
 
 % c-sdk {
-static inline void glitch_program_init(PIO pio, uint sm, uint offset, uint glitch_out, uint trigger_in, bool pattern, bool rising_edge) {
-    pio_gpio_init(pio, glitch_out);
-    pio_sm_set_consecutive_pindirs(pio, sm, glitch_out, 1, true);
-    pio_sm_set_consecutive_pindirs(pio, sm, trigger_in, 1, false);
-    gpio_set_pulls(trigger_in, 0, 0);
-    gpio_set_drive_strength(glitch_out, GPIO_DRIVE_STRENGTH_12MA);
-    gpio_set_slew_rate(glitch_out, GPIO_SLEW_RATE_FAST);
+#include "config.h"
 
-    pio_sm_config c;
-    if (pattern) {
-        c = glitch_pattern_program_get_default_config(offset);
-        if (!rising_edge) {
-            pio->instr_mem[offset + glitch_pattern_offset_trigger] = pio_encode_wait_pin(true, 0);
-            pio->instr_mem[offset + glitch_pattern_offset_trigger + 1] = pio_encode_wait_pin(false, 0);
-        }
-    } else {
-        c = glitch_program_get_default_config(offset);
-        if (!rising_edge) {
-            pio->instr_mem[offset + glitch_offset_trigger] = pio_encode_wait_pin(true, 0);
-            pio->instr_mem[offset + glitch_offset_trigger + 1] = pio_encode_wait_pin(false, 0);
-        }
-    }
+static inline void glitch_switcher_program_init(PIO pio, uint sm, uint offset, bool rising_edge) {
+    // pio_gpio_init(pio, switcher_out);
+    for (int i = 0; i < SWITCH_OUT_COUNT; i++)
+        pio_gpio_init(pio, SWITCH_OUT_PIN + i);
+    pio_gpio_init(pio, GLITCH_TRIGGER_PIN);
+    pio_sm_set_consecutive_pindirs(pio, sm, SWITCH_OUT_PIN, SWITCH_OUT_COUNT, true);
+    pio_sm_set_consecutive_pindirs(pio, sm, GLITCH_TRIGGER_PIN, 1, false);
+    gpio_set_pulls(GLITCH_TRIGGER_PIN, 0, 0);
+    gpio_set_inover(GLITCH_TRIGGER_PIN, rising_edge ? GPIO_OVERRIDE_NORMAL : GPIO_OVERRIDE_INVERT);
 
-    sm_config_set_in_pins(&c, trigger_in);
-    sm_config_set_out_pins(&c, glitch_out, 1);
-    sm_config_set_set_pins(&c, glitch_out, 1);
+    pio_sm_config c = switcher_program_get_default_config(offset);
+    sm_config_set_in_pins(&c, GLITCH_TRIGGER_PIN);
+    sm_config_set_out_pins(&c, SWITCH_OUT_PIN, SWITCH_OUT_COUNT);
+    sm_config_set_set_pins(&c, SWITCH_OUT_PIN, SWITCH_OUT_COUNT);
+    // sm_config_set_out_shift(&c, false, true, 32); // autopull
+    sm_config_set_out_shift(&c, true, true, 32); // autopull
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX); // fifo size = 8
 
     pio_sm_init(pio, sm, offset, &c);
-    pio_sm_set_enabled(pio, sm, true);
+    // pio_sm_set_enabled(pio, sm, true);
+}
+
+static inline void glitch_program_init(PIO pio, uint sm, uint offset, bool rising_edge) {
+    // pio_gpio_init(pio, glitch_out);
+    pio_gpio_init(pio, GLITCH_TRIGGER_PIN);
+    pio_sm_set_consecutive_pindirs(pio, sm, GLITCH_OUT_PIN, 2, true);
+    pio_sm_set_consecutive_pindirs(pio, sm, GLITCH_TRIGGER_PIN, 1, false);
+    gpio_set_pulls(GLITCH_TRIGGER_PIN, 0, 0);
+    gpio_set_inover(GLITCH_TRIGGER_PIN, rising_edge ? GPIO_OVERRIDE_NORMAL : GPIO_OVERRIDE_INVERT);
+
+    pio_sm_config c = glitch_program_get_default_config(offset);
+    sm_config_set_in_pins(&c, GLITCH_TRIGGER_PIN);
+    sm_config_set_out_pins(&c, GLITCH_OUT_PIN, 2);
+    sm_config_set_set_pins(&c, GLITCH_OUT_PIN, 2);
+    sm_config_set_out_shift(&c, false, true, 32); // autopull
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX); // fifo size = 8
+
+    pio_sm_init(pio, sm, offset, &c);
+    // pio_sm_set_enabled(pio, sm, true);
+}
+
+static inline void glitch_pio_enable(PIO pio, uint glitch_sm, uint switcher_sm) {
+    uint32_t sm_mask = (1u << glitch_sm) | (1u << switcher_sm);
+    pio_enable_sm_mask_in_sync(pio, sm_mask);
+}
+
+static inline void glitch_pio_force_trigger(PIO pio, uint glitch_sm, uint glitch_offset, uint switcher_sm, uint switcher_offset) {
+    uint32_t sm_mask = (1u << glitch_sm) | (1u << switcher_sm);
+    pio_set_sm_mask_enabled(pio, sm_mask, false);
+    pio_sm_exec(pio, glitch_sm, pio_encode_jmp(glitch_offset + glitch_offset_loop));
+    pio_sm_exec(pio, switcher_sm, pio_encode_jmp(switcher_offset + switcher_offset_loop));
+    pio_enable_sm_mask_in_sync(pio, sm_mask);
 }
 %}
